@@ -1,0 +1,101 @@
+name: Infrastructure-DeplAZURE_CONNECTIONoyment-$(Build.SourceBranchName)-$(Date:yyyyMMdd)
+
+variables:
+  TFSTATE_SA: stousecommon
+  TFSTATE_CONTAINER: tfstate
+  TFSTATE_KEY: terraform.tfstate
+  TFSTATE_RG: delete
+  AZURE_CONNECTION: sam
+
+trigger:
+- main
+
+pool: linux-agentpool
+
+stages: 
+- stage: Terraform_build
+  condition: ne(variables['Build.SourceBranch'], 'refs/heads/main')
+  jobs:
+  - job: Build
+    steps:
+
+    - task: TerraformInstaller@0
+      displayName: 'package requirements'
+      inputs:
+        terraformVersion: 'latest'
+
+    - task: TerraformCLI@0
+      displayName: 'Initialization'
+      inputs:
+        command: 'init'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/dev'
+        commandOptions: '-upgrade'
+        backendType: 'azurerm'
+        backendServiceArm: '$(AZURE_CONNECTION)'
+        backendAzureRmSubscriptionId: '$(ARM_SUBCRIPTION_ID)'
+        backendAzureRmResourceGroupName: '$(TFSTATE_RG)'
+        backendAzureRmStorageAccountName: '$(TFSTATE_SA)'
+        backendAzureRmContainerName: '$(TFSTATE_CONTAINER)'
+        backendAzureRmKey: '$(TFSTATE_KEY)'
+        allowTelemetryCollection: true
+
+    - task: TerraformCLI@0
+      displayName: 'Exective Plan'
+      inputs:
+        command: 'plan'
+        workingDirectory: '$(System.DefaultWorkingDirectory)/dev'
+        environmentServiceName: $(AZURE_CONNECTION)
+        providerAzureRmSubscriptionId: $(ARM_SUBCRIPTION_ID)
+        allowTelemetryCollection: true
+        commandOptions: -lock=false -input=false
+
+- stage: Run_Terraform_Apply
+  condition: eq(variables['Build.SourceBranch'], 'refs/heads/main')
+  dependsOn: Terraform_build
+  jobs:
+  - deployment: Apply
+    environment: infra_env
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+
+          - task: TerraformInstaller@0
+            displayName: 'package requirements'
+            inputs:
+              terraformVersion: 'latest'
+
+          - task: TerraformCLI@0
+            displayName: 'Initialization'
+            inputs:
+              command: 'init'
+              workingDirectory: '$(System.DefaultWorkingDirectory)/dev'
+              commandOptions: '-upgrade'
+              backendType: 'azurerm'
+              backendServiceArm: '$(AZURE_CONNECTION)'
+              backendAzureRmSubscriptionId: '$(ARM_SUBCRIPTION_ID)'
+              backendAzureRmResourceGroupName: '$(TFSTATE_RG)'
+              backendAzureRmStorageAccountName: '$(TFSTATE_SA)'
+              backendAzureRmContainerName: '$(TFSTATE_CONTAINER)'
+              backendAzureRmKey: '$(TFSTATE_KEY)'
+              allowTelemetryCollection: true
+
+          - task: TerraformCLI@0
+            displayName: 'Exective Plan'
+            inputs:
+              command: 'plan'
+              workingDirectory: '$(System.DefaultWorkingDirectory)/dev'
+              environmentServiceName: $(AZURE_CONNECTION)
+              providerAzureRmSubscriptionId: $(ARM_SUBCRIPTION_ID)
+              allowTelemetryCollection: true
+              commandOptions: -lock=false -input=false
+
+          - task: TerraformCLI@0
+            displayName: Deploy
+            inputs:
+              command: 'apply'
+              workingDirectory: '$(System.DefaultWorkingDirectory)/dev'
+              environmentServiceName: $(AZURE_CONNECTION)
+              providerAzureRmSubscriptionId: $(ARM_SUBCRIPTION_ID)
+              commandOptions: '-input=false'
+              allowTelemetryCollection: false
